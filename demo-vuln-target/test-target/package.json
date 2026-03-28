@@ -1,0 +1,11 @@
+{
+  "name": "test-target",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node test-target.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

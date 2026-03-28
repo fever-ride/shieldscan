@@ -1,0 +1,36 @@
+name: Trigger SAST Webhook
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+
+jobs:
+  trigger-sast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send GitHub event to security platform webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.SAST_WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.SAST_WEBHOOK_SECRET }}
+          GITHUB_EVENT: ${{ github.event_name }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "SAST_WEBHOOK_URL is not configured. Skipping webhook trigger."
+            exit 0
+          fi
+
+          BODY="$(cat "$GITHUB_EVENT_PATH")"
+          SIGNATURE=""
+
+          if [ -n "$WEBHOOK_SECRET" ]; then
+            DIGEST="$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex | sed 's/^.* //')"
+            SIGNATURE="sha256=$DIGEST"
+          fi
+
+          curl --fail-with-body -sS -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: $GITHUB_EVENT" \
+            -H "X-Hub-Signature-256: $SIGNATURE" \
+            --data "$BODY"
