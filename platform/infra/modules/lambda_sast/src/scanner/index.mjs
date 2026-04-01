@@ -72,16 +72,17 @@ async function fetchCodeFromGithub(cloneUrl, branch, repo) {
   if (!treeRes.ok) throw new Error(`GitHub API error: ${treeRes.status}`);
   const tree = await treeRes.json();
 
-  const jsFiles = tree.tree.filter(f =>
+  const supportedFiles = tree.tree.filter(f =>
     f.type === 'blob' &&
-    /\.(js|mjs|cjs)$/.test(f.path) &&
+    /\.(js|mjs|cjs|jsx|ts|tsx|py|java|go)$/.test(f.path) &&
     !f.path.includes('node_modules') &&
     !f.path.includes('dist/') &&
+    !f.path.includes('vendor/') &&
     !f.path.includes('.min.')
   );
 
   const files = [];
-  for (const file of jsFiles.slice(0, 50)) {
+  for (const file of supportedFiles.slice(0, 100)) {
     try {
       const contentRes = await fetch(`${apiBase}/contents/${file.path}?ref=${branch}`, { headers });
       if (!contentRes.ok) continue;
