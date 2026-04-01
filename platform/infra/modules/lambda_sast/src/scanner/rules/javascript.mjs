@@ -52,24 +52,28 @@ export const JS_RULES = [
   {
     id: 'INSECURE_RANDOM', name: 'Insecure Randomness', severity: 'MEDIUM',
     patterns: [
-      { regex: /Math\.random\s*\(\s*\)/g, desc: 'Math.random() is not cryptographically secure' },
-      { regex: /Math\.random\s*\(\s*\).*(?:token|password|secret|key|auth|session)/gi, desc: 'Math.random() used for security-sensitive value' },
+      // Only flag Math.random() when used in security-sensitive context
+      { regex: /(?:token|password|secret|key|auth|session|nonce|salt|csrf|otp)\s*=\s*[^;]*Math\.random\s*\(\s*\)/gi, desc: 'Math.random() used for security-sensitive value' },
+      { regex: /Math\.random\s*\(\s*\)[^;]*(?:token|password|secret|key|auth|session)/gi, desc: 'Math.random() result used in security-sensitive context' },
     ],
-    message: 'Math.random() is not cryptographically secure. Use crypto.randomBytes() or crypto.randomUUID().'
+    message: 'Math.random() is not cryptographically secure. Use crypto.randomBytes() or crypto.randomUUID() for security-sensitive values.'
   },
   {
     id: 'SENSITIVE_DATA_LOG', name: 'Sensitive Data Logging', severity: 'MEDIUM',
     patterns: [
-      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:password|passwd|pwd)[^)]*\)/gi, desc: 'Logging password' },
-      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:token|secret|apikey|api_key)[^)]*\)/gi, desc: 'Logging sensitive token/key' },
-      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:creditcard|credit_card|ssn|social_security)[^)]*\)/gi, desc: 'Logging sensitive personal data' },
+      // Match variable/property references, not string literals containing the word
+      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:\.password|\.passwd|\.pwd|password\s*:|passwd\s*:)[^)]*\)/gi, desc: 'Logging password value' },
+      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:\.token|\.secret|\.apiKey|\.api_key|token\s*:|secret\s*:)[^)]*\)/gi, desc: 'Logging sensitive token/key' },
+      { regex: /console\.(log|info|debug|warn|error)\s*\([^)]*(?:creditcard|credit_card|\.ssn|social_security)[^)]*\)/gi, desc: 'Logging sensitive personal data' },
     ],
     message: 'Sensitive data may be logged. Remove or mask sensitive information in logs.'
   },
   {
     id: 'INSECURE_FUNCTION', name: 'Insecure Function Usage', severity: 'HIGH',
     patterns: [
-      { regex: /\beval\s*\(/g, desc: 'Usage of eval()' },
+      // \beval\b avoids matching "evaluate", "evalResult" etc — but \beval\s*\( is still too broad.
+      // Require eval( to be called as a standalone statement or assignment, not as part of a longer identifier.
+      { regex: /(?<![.\w])eval\s*\(/g, desc: 'Usage of eval()' },
       { regex: /\bexecSync\s*\(/g, desc: 'Usage of execSync()' },
       { regex: /\bspawn\s*\([^)]*\$\{/g, desc: 'Unvalidated input in spawn()' },
       { regex: /new\s+Function\s*\(/g, desc: 'Usage of new Function()' },
@@ -87,5 +91,33 @@ export const JS_RULES = [
       { regex: /\b(?:DES|RC4|RC2|Blowfish)\b/gi, desc: 'Weak encryption algorithm' },
     ],
     message: 'Weak cryptographic algorithm detected. Use SHA-256 or AES-256 instead.'
+  },
+  {
+    id: 'JWT_MISUSE', name: 'JWT Misuse', severity: 'HIGH',
+    patterns: [
+      { regex: /jwt\.decode\s*\(/g, desc: 'jwt.decode() does not verify signature — use jwt.verify() instead' },
+      { regex: /jwt\.verify\s*\([^,)]+,\s*(?:null|undefined|''|"")/gi, desc: 'jwt.verify() called with null/empty secret' },
+      { regex: /algorithms\s*:\s*\[\s*['"]none['"]/gi, desc: 'JWT algorithm set to "none" — disables signature verification' },
+    ],
+    message: 'Insecure JWT usage. Always use jwt.verify() with a strong secret and explicit algorithm.'
+  },
+  {
+    id: 'CORS_MISCONFIGURATION', name: 'CORS Misconfiguration', severity: 'MEDIUM',
+    patterns: [
+      { regex: /cors\s*\(\s*\{[^}]*origin\s*:\s*['"]\*['"]/gi, desc: 'CORS configured with wildcard origin — allows any domain' },
+      { regex: /['"]Access-Control-Allow-Origin['"]\s*,\s*['"]\*['"]/gi, desc: 'Wildcard CORS header allows all origins' },
+      { regex: /res\.(set|header|setHeader)\s*\([^)]*Access-Control-Allow-Origin[^)]*req\.(headers?|header\s*\()\s*\.?\s*origin/gi, desc: 'CORS origin reflected from request — potential CORS bypass' },
+    ],
+    message: 'CORS misconfiguration. Restrict allowed origins to trusted domains instead of using wildcards.'
+  },
+  {
+    id: 'PROTOTYPE_POLLUTION', name: 'Prototype Pollution', severity: 'HIGH',
+    patterns: [
+      { regex: /Object\.assign\s*\(\s*(?!{})[^,)]+,\s*req\.(body|query|params)/gi, desc: 'User input passed to Object.assign() — prototype pollution risk' },
+      { regex: /\.\.\.\s*req\.(body|query|params)/g, desc: 'Spread of user input into object — prototype pollution risk' },
+      { regex: /(?:merge|deepMerge|extend|defaults)\s*\([^,)]*,\s*req\.(body|query|params)/gi, desc: 'User input in deep merge — prototype pollution risk' },
+      { regex: /\[req\.(body|query|params)[^\]]*\]\s*=/g, desc: 'User input used as dynamic object key — prototype pollution risk' },
+    ],
+    message: 'Potential prototype pollution. Validate and sanitize user input before merging into objects.'
   },
 ];

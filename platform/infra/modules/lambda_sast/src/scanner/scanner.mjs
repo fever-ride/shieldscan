@@ -52,15 +52,22 @@ export const scanCode = (code, filename = 'untitled.js') => {
     }
   }
 
+  // Deduplicate: same rule + file + line = same finding
+  const seen = new Set();
+  const deduped = vulnerabilities.filter(v => {
+    const key = `${v.id}:${v.file}:${v.line}`;
+    return seen.has(key) ? false : (seen.add(key), true);
+  });
+
   const severityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
-  vulnerabilities.sort((a, b) => {
+  deduped.sort((a, b) => {
     if (severityOrder[a.severity] !== severityOrder[b.severity]) {
       return severityOrder[a.severity] - severityOrder[b.severity];
     }
     return a.line - b.line;
   });
 
-  return vulnerabilities;
+  return deduped;
 };
 
 export default { scanCode };

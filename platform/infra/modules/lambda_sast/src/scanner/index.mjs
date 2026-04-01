@@ -72,25 +72,58 @@ async function fetchCodeFromGithub(cloneUrl, branch, repo) {
   if (!treeRes.ok) throw new Error(`GitHub API error: ${treeRes.status}`);
   const tree = await treeRes.json();
 
-  const supportedFiles = tree.tree.filter(f =>
-    f.type === 'blob' &&
-    /\.(js|mjs|cjs|jsx|ts|tsx|py|java|go)$/.test(f.path) &&
-    !f.path.includes('node_modules') &&
-    !f.path.includes('dist/') &&
-    !f.path.includes('vendor/') &&
-    !f.path.includes('.min.')
-  );
+  // Directories that are high-risk and should be scanned first
+  const HIGH_PRIORITY_DIRS = ['routes', 'controllers', 'auth', 'middleware', 'api', 'security', 'handlers'];
 
+  const isTestFile = (path) =>
+    /\.(test|spec)\.[jt]sx?$/.test(path) ||
+    path.includes('/__tests__/') ||
+    path.includes('/test/') ||
+    path.includes('/tests/') ||
+    path.includes('/fixtures/') ||
+    path.includes('/mocks/');
+
+  const filePriority = (path) => {
+    const idx = HIGH_PRIORITY_DIRS.findIndex(dir =>
+      path.includes(`/${dir}/`) || path.startsWith(`${dir}/`)
+    );
+    return idx === -1 ? HIGH_PRIORITY_DIRS.length : idx;
+  };
+
+  const supportedFiles = tree.tree
+    .filter(f =>
+      f.type === 'blob' &&
+      /\.(js|mjs|cjs|jsx|ts|tsx|py|java|go)$/.test(f.path) &&
+      !f.path.includes('node_modules') &&
+      !f.path.includes('dist/') &&
+      !f.path.includes('vendor/') &&
+      !f.path.includes('.min.') &&
+      !isTestFile(f.path)
+    )
+    .sort((a, b) => filePriority(a.path) - filePriority(b.path));
+
+  const filesToFetch = supportedFiles.slice(0, 100);
+  const CONCURRENCY = 10;
   const files = [];
-  for (const file of supportedFiles.slice(0, 100)) {
-    try {
-      const contentRes = await fetch(`${apiBase}/contents/${file.path}?ref=${branch}`, { headers });
-      if (!contentRes.ok) continue;
-      const contentData = await contentRes.json();
-      const code = Buffer.from(contentData.content, 'base64').toString('utf-8');
-      files.push({ path: file.path, code });
-    } catch (e) {
-      console.warn(`Failed to fetch ${file.path}:`, e.message);
+
+  for (let i = 0; i < filesToFetch.length; i += CONCURRENCY) {
+    const batch = filesToFetch.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map(async (file) => {
+        const contentRes = await fetch(`${apiBase}/contents/${file.path}?ref=${branch}`, { headers });
+        if (!contentRes.ok) return null;
+        const contentData = await contentRes.json();
+        const code = Buffer.from(contentData.content, 'base64').toString('utf-8');
+        return { path: file.path, code };
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        files.push(result.value);
+      } else if (result.status === 'rejected') {
+        console.warn('Failed to fetch file:', result.reason?.message);
+      }
     }
   }
 
