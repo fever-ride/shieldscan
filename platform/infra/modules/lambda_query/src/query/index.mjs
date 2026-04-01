@@ -104,21 +104,45 @@ async function listTargets() {
 }
 
 async function addTarget(body) {
-  const { target_url, app_name, schedule, team } = body;
+  const {
+    target_url, app_name, schedule, team,
+    // Auth config — canonical keys match tester.authenticate()
+    auth_config,
+    // Endpoint resolution
+    openapi_url, endpoint_list, use_manual_override,
+  } = body;
+
   if (!target_url) throw new Error('target_url required');
 
   const targetId = randomUUID();
-  await dynamo.send(new PutItemCommand({
-    TableName: TARGETS_TABLE,
-    Item: {
-      target_id: { S: targetId },
-      target_url: { S: target_url },
-      app_name: { S: app_name || 'unnamed' },
-      schedule: { S: schedule || 'manual_only' },
-      team: { S: team || 'default' },
-      created_at: { S: new Date().toISOString() }
-    }
-  }));
+
+  // Base item — always present
+  const item = {
+    target_id:  { S: targetId },
+    target_url: { S: target_url },
+    app_name:   { S: app_name  || 'unnamed' },
+    schedule:   { S: schedule  || 'manual_only' },
+    team:       { S: team      || 'default' },
+    created_at: { S: new Date().toISOString() },
+  };
+
+  // Auth config — stored flat (auth_* prefix) to stay in DynamoDB String type.
+  // trigger/index.mjs remaps back to canonical keys (type/token/...) when building SQS jobs.
+  // Note: auth_credentials contains secrets; use Secrets Manager in production.
+  if (auth_config?.type) {
+    item.auth_type = { S: auth_config.type };
+    if (auth_config.token)       item.auth_token        = { S: auth_config.token };
+    if (auth_config.login_url)   item.auth_login_url    = { S: auth_config.login_url };
+    if (auth_config.credentials) item.auth_credentials  = { S: JSON.stringify(auth_config.credentials) };
+    if (auth_config.token_path)  item.auth_token_path   = { S: auth_config.token_path };
+  }
+
+  // Endpoint resolution config
+  if (openapi_url)                      item.openapi_url         = { S: openapi_url };
+  if (endpoint_list?.length)            item.endpoint_list       = { S: JSON.stringify(endpoint_list) };
+  if (use_manual_override === true)     item.use_manual_override = { BOOL: true };
+
+  await dynamo.send(new PutItemCommand({ TableName: TARGETS_TABLE, Item: item }));
   return { target_id: targetId };
 }
 
