@@ -23,7 +23,7 @@ variable "scans_table_arn" {
   type = string
 }
 
-variable "scan_targets_table_arn" {
+variable "apps_table_arn" {
   type = string
 }
 
@@ -33,6 +33,18 @@ variable "reports_bucket_arn" {
 
 variable "sns_topic_arn" {
   description = "SNS topic ARN — pass empty string if not yet created"
+  type        = string
+  default     = ""
+}
+
+variable "sast_complete_topic_arn" {
+  description = "SNS topic ARN for SAST scan completion events"
+  type        = string
+  default     = ""
+}
+
+variable "ai_feedback_table_arn" {
+  description = "DynamoDB ai_feedback table ARN"
   type        = string
   default     = ""
 }

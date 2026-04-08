@@ -59,10 +59,12 @@ resource "aws_lambda_function" "scanner" {
 
   environment {
     variables = {
-      SCANS_TABLE_NAME    = var.scans_table_name
-      REPORTS_BUCKET_NAME = var.reports_bucket_name
-      SNS_TOPIC_ARN       = var.sns_topic_arn
-      GITHUB_TOKEN        = var.github_token
+      SCANS_TABLE_NAME        = var.scans_table_name
+      APPS_TABLE_NAME         = var.apps_table_name
+      REPORTS_BUCKET_NAME     = var.reports_bucket_name
+      SNS_TOPIC_ARN           = var.sns_topic_arn
+      SAST_COMPLETE_TOPIC_ARN = var.sast_complete_topic_arn
+      GITHUB_TOKEN            = var.github_token
     }
   }
 

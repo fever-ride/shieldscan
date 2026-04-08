@@ -1,0 +1,141 @@
+{
+  "_meta": {
+    "description": "Human-annotated ground truth for ShieldScan AI triage evaluation",
+    "created_by": "manual review",
+    "target_files": [
+      "eval/target/vulnerable.js",
+      "eval/target/false_positives.js"
+    ],
+    "labels": {
+      "TRUE_POSITIVE": "Finding is a real vulnerability that must be fixed",
+      "FALSE_POSITIVE": "Finding is not exploitable in context — scanner over-fired"
+    }
+  },
+  "findings": [
+    {
+      "finding_id": "SQL_INJECTION:eval/target/vulnerable.js:21",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "Direct string concatenation of userId into SELECT — classic SQL injection sink"
+    },
+    {
+      "finding_id": "SQL_INJECTION:eval/target/vulnerable.js:26",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "Template literal interpolation of name into SQL string — user-controlled input reaches query"
+    },
+    {
+      "finding_id": "NOSQL_INJECTION:eval/target/vulnerable.js:33",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "req.query passed directly to MongoDB find() — allows operator injection e.g. {$gt:''}"
+    },
+    {
+      "finding_id": "NOSQL_INJECTION:eval/target/vulnerable.js:38",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "req.body passed directly to findOne() — auth bypass via {$ne:null} is trivial"
+    },
+    {
+      "finding_id": "XSS:eval/target/vulnerable.js:45",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "Unsanitized userInput assigned to innerHTML — classic stored/reflected XSS sink"
+    },
+    {
+      "finding_id": "PATH_TRAVERSAL:eval/target/vulnerable.js:52",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "req.params.filename used directly in fs.readFile — ../../etc/passwd traversal possible"
+    },
+    {
+      "finding_id": "INSECURE_FUNCTION:eval/target/vulnerable.js:57",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "Scanner fired on the comment line containing 'eval()' — not executable code"
+    },
+    {
+      "finding_id": "INSECURE_FUNCTION:eval/target/vulnerable.js:59",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "eval(expression) with externally supplied expression — arbitrary code execution"
+    },
+    {
+      "finding_id": "INSECURE_FUNCTION:eval/target/vulnerable.js:62",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "Scanner matched 'child_process.*exec' against a comment line — not executable code"
+    },
+    {
+      "finding_id": "JWT_MISUSE:eval/target/vulnerable.js:71",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "jwt.decode() does not verify the signature — attacker can forge any token payload"
+    },
+    {
+      "finding_id": "JWT_MISUSE:eval/target/vulnerable.js:77",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "jwt.verify(token, null) disables signature verification — equivalent to jwt.decode()"
+    },
+    {
+      "finding_id": "WEAK_CRYPTO:eval/target/vulnerable.js:84",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "MD5 used to hash passwords — broken for this use case, rainbow tables exist"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/vulnerable.js:89",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "Scanner fired on a comment line mentioning 'token' and 'Math.random()' — not code"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/vulnerable.js:91",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "Math.random() used as session token — predictable, not cryptographically secure"
+    },
+    {
+      "finding_id": "PROTOTYPE_POLLUTION:eval/target/vulnerable.js:99",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "Object.assign onto existing object with req.body — __proto__ key injection possible"
+    },
+    {
+      "finding_id": "CORS_MISCONFIGURATION:eval/target/vulnerable.js:107",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "cors({ origin: '*' }) allows any domain to make cross-origin requests with credentials"
+    },
+    {
+      "finding_id": "HARDCODED_SECRET:eval/target/vulnerable.js:112",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "Hardcoded demo API key in source — still a real secret-management finding because credentials are embedded in code and git history"
+    },
+    {
+      "finding_id": "SENSITIVE_DATA_LOG:eval/target/vulnerable.js:118",
+      "ground_truth": "TRUE_POSITIVE",
+      "notes": "user.password logged to console — appears in log aggregation systems (CloudWatch, Splunk)"
+    },
+    {
+      "finding_id": "XSS:eval/target/false_positives.js:24",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "innerHTML receives output of escapeHtml() — sanitized before assignment, not exploitable"
+    },
+    {
+      "finding_id": "WEAK_CRYPTO:eval/target/false_positives.js:16",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "SHA-1 used for content-addressed cache key, not for auth/signing — collision attacks do not apply here"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/false_positives.js:27",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "Scanner fired on a comment line that mentions 'key' and 'Math.random()' — not code"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/false_positives.js:31",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "cacheKey matched 'key' substring — this is a transient UI deduplication id, not a cryptographic secret"
+    },
+    {
+      "finding_id": "HARDCODED_IP:eval/target/false_positives.js:36",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "Scanner fired on comment text '127.0.0.1 is localhost' — not a hardcoded production endpoint"
+    },
+    {
+      "finding_id": "HARDCODED_IP:eval/target/false_positives.js:39",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "127.0.0.1 is the loopback address — not a production secret; used only in local dev config"
+    },
+    {
+      "finding_id": "HARDCODED_SECRET:eval/target/false_positives.js:46",
+      "ground_truth": "FALSE_POSITIVE",
+      "notes": "Value 'Change_Me_On_First_Login!' is an explicit placeholder — not a real credential"
+    }
+  ]
+}

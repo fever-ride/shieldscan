@@ -62,12 +62,14 @@ module "iam" {
   environment  = var.environment
   use_lab_role = var.use_lab_role
 
-  sast_queue_arn         = module.sqs.sast_queue_arn
-  pentest_queue_arn      = module.sqs.pentest_queue_arn
-  scans_table_arn        = module.dynamodb.scans_table_arn
-  scan_targets_table_arn = module.dynamodb.scan_targets_table_arn
-  reports_bucket_arn     = module.s3_reports.bucket_arn
-  sns_topic_arn          = module.sns.topic_arn
+  sast_queue_arn          = module.sqs.sast_queue_arn
+  pentest_queue_arn       = module.sqs.pentest_queue_arn
+  scans_table_arn         = module.dynamodb.scans_table_arn
+  apps_table_arn          = module.dynamodb.apps_table_arn
+  ai_feedback_table_arn   = module.dynamodb.ai_feedback_table_arn
+  reports_bucket_arn      = module.s3_reports.bucket_arn
+  sns_topic_arn           = module.sns.topic_arn
+  sast_complete_topic_arn = module.sns.sast_complete_topic_arn
 }
 
 # =============================================================
@@ -103,8 +105,10 @@ module "lambda_sast" {
   sast_queue_arn  = module.sqs.sast_queue_arn
 
   scans_table_name    = module.dynamodb.scans_table_name
+  apps_table_name     = module.dynamodb.apps_table_name
   reports_bucket_name = module.s3_reports.bucket_name
-  sns_topic_arn       = module.sns.topic_arn
+  sns_topic_arn           = module.sns.topic_arn
+  sast_complete_topic_arn = module.sns.sast_complete_topic_arn
 
   github_webhook_secret = var.github_webhook_secret
   github_token          = var.github_token
@@ -119,9 +123,9 @@ module "lambda_pentest" {
   project_name = var.project_name
   environment  = var.environment
 
-  lambda_pentest_role_arn    = module.iam.lambda_pentest_role_arn
-  scan_targets_table_name   = module.dynamodb.scan_targets_table_name
-  pentest_queue_url         = module.sqs.pentest_queue_url
+  lambda_pentest_role_arn = module.iam.lambda_pentest_role_arn
+  apps_table_name         = module.dynamodb.apps_table_name
+  pentest_queue_url       = module.sqs.pentest_queue_url
 }
 
 module "ecs_fargate" {
@@ -153,9 +157,26 @@ module "lambda_query" {
   environment  = var.environment
 
   lambda_query_role_arn     = module.iam.lambda_query_role_arn
-  scans_table_name          = module.dynamodb.scans_table_name
-  scan_targets_table_name   = module.dynamodb.scan_targets_table_name
-  reports_bucket_name       = module.s3_reports.bucket_name
+  scans_table_name       = module.dynamodb.scans_table_name
+  apps_table_name        = module.dynamodb.apps_table_name
+  ai_feedback_table_name = module.dynamodb.ai_feedback_table_name
+  reports_bucket_name    = module.s3_reports.bucket_name
+}
+
+module "lambda_ai_analysis" {
+  source       = "./modules/lambda_ai_analysis"
+  project_name = var.project_name
+  environment  = var.environment
+
+  lambda_ai_role_arn      = module.iam.lambda_ai_role_arn
+  sast_complete_topic_arn = module.sns.sast_complete_topic_arn
+  scans_table_name        = module.dynamodb.scans_table_name
+  reports_bucket_name     = module.s3_reports.bucket_name
+  ai_feedback_table_name  = module.dynamodb.ai_feedback_table_name
+
+  anthropic_api_key   = var.anthropic_api_key
+  ai_analysis_enabled = var.ai_analysis_enabled
+  github_token        = var.github_token
 }
 
 module "cognito" {

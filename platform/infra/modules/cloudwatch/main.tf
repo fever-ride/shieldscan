@@ -77,6 +77,28 @@ resource "aws_cloudwatch_metric_alarm" "pentest_trigger_errors" {
 }
 
 # -----------------------------------------------------
+# CloudWatch Alarm — HIGH findings spike (custom EMF metric)
+# -----------------------------------------------------
+
+resource "aws_cloudwatch_metric_alarm" "high_findings_spike" {
+  alarm_name          = "${var.project_name}-${var.environment}-high-findings-spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "findings_total"
+  namespace           = "ShieldScan"
+  period              = 3600
+  statistic           = "Sum"
+  threshold           = 10
+  alarm_description   = "More than 10 HIGH findings detected in the last hour"
+  alarm_actions       = [var.sns_topic_arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    severity = "HIGH"
+  }
+}
+
+# -----------------------------------------------------
 # CloudWatch Dashboard — system overview
 # -----------------------------------------------------
 
@@ -152,6 +174,68 @@ resource "aws_cloudwatch_dashboard" "main" {
           ]
           period = 60
           stat   = "Average"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0, y = 18, width = 12, height = 6
+        properties = {
+          title   = "Scans Completed (ShieldScan)"
+          region  = var.aws_region
+          metrics = [
+            ["ShieldScan", "scans_total", "scan_type", "sast",    "status", "completed", { label = "SAST" }],
+            ["ShieldScan", "scans_total", "scan_type", "pentest", "status", "completed", { label = "Pentest" }]
+          ]
+          period = 3600
+          stat   = "Sum"
+          view   = "timeSeries"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12, y = 18, width = 12, height = 6
+        properties = {
+          title   = "Findings by Severity (ShieldScan)"
+          region  = var.aws_region
+          metrics = [
+            ["ShieldScan", "findings_total", "severity", "HIGH",   { label = "HIGH" }],
+            ["ShieldScan", "findings_total", "severity", "MEDIUM", { label = "MEDIUM" }],
+            ["ShieldScan", "findings_total", "severity", "LOW",    { label = "LOW" }]
+          ]
+          period = 3600
+          stat   = "Sum"
+          view   = "timeSeries"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0, y = 24, width = 12, height = 6
+        properties = {
+          title   = "AI Triage + Agent Investigations"
+          region  = var.aws_region
+          metrics = [
+            ["ShieldScan", "ai_triage_total",             "status", "success",              { label = "Triage OK" }],
+            ["ShieldScan", "agent_investigations_total",   "verdict", "CONFIRMED",           { label = "Confirmed" }],
+            ["ShieldScan", "agent_investigations_total",   "verdict", "LIKELY_FALSE_POSITIVE", { label = "False Positive" }]
+          ]
+          period = 3600
+          stat   = "Sum"
+          view   = "timeSeries"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12, y = 24, width = 12, height = 6
+        properties = {
+          title   = "Human Feedback (Confirm vs Dismiss)"
+          region  = var.aws_region
+          metrics = [
+            ["ShieldScan", "human_feedback_total", "action", "confirm", { label = "Confirmed" }],
+            ["ShieldScan", "human_feedback_total", "action", "dismiss", { label = "Dismissed" }]
+          ]
+          period = 3600
+          stat   = "Sum"
+          view   = "timeSeries"
         }
       }
     ]

@@ -29,8 +29,21 @@ resource "aws_dynamodb_table" "scans" {
   }
 
   attribute {
+    name = "app_id"
+    type = "S"
+  }
+
+  attribute {
     name = "created_at"
     type = "S"
+  }
+
+  # GSI0: "Show all scans for an app, newest first"
+  global_secondary_index {
+    name            = "app-time-index"
+    hash_key        = "app_id"
+    range_key       = "created_at"
+    projection_type = "ALL"
   }
 
   # GSI1: "Show all scans for this repo, newest first"
@@ -67,17 +80,27 @@ resource "aws_dynamodb_table" "scans" {
 }
 
 # -----------------------------------------------------
-# Scan Targets Table — registered pentest API URLs
+# Apps Table — unified app entity linking SAST repo + DAST target
 # -----------------------------------------------------
 
-resource "aws_dynamodb_table" "scan_targets" {
-  name         = "${var.project_name}-${var.environment}-scan-targets"
+resource "aws_dynamodb_table" "apps" {
+  name         = "${var.project_name}-${var.environment}-apps"
   billing_mode = "PAY_PER_REQUEST"
 
-  hash_key = "target_id"
+  hash_key = "app_id"
 
   attribute {
-    name = "target_id"
+    name = "app_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "repo_name"
+    type = "S"
+  }
+
+  attribute {
+    name = "owner"
     type = "S"
   }
 
@@ -91,7 +114,22 @@ resource "aws_dynamodb_table" "scan_targets" {
     type = "S"
   }
 
-  # GSI: "Get all targets with schedule=daily for EventBridge cron"
+  # GSI: look up app by repo_name (SAST webhook auto-association)
+  global_secondary_index {
+    name            = "repo-index"
+    hash_key        = "repo_name"
+    projection_type = "ALL"
+  }
+
+  # GSI: list all apps for an owner
+  global_secondary_index {
+    name            = "owner-index"
+    hash_key        = "owner"
+    range_key       = "created_at"
+    projection_type = "ALL"
+  }
+
+  # GSI: get all apps with schedule=daily/weekly for EventBridge cron
   global_secondary_index {
     name            = "schedule-time-index"
     hash_key        = "schedule"
@@ -100,6 +138,45 @@ resource "aws_dynamodb_table" "scan_targets" {
   }
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-scan-targets"
+    Name = "${var.project_name}-${var.environment}-apps"
+  }
+}
+
+# -----------------------------------------------------
+# AI Feedback Table — stores AI triage + investigation results
+# -----------------------------------------------------
+
+resource "aws_dynamodb_table" "ai_feedback" {
+  name         = "${var.project_name}-${var.environment}-ai-feedback"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key  = "feedback_id"
+  range_key = "created_at"
+
+  attribute {
+    name = "feedback_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "app_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "created_at"
+    type = "S"
+  }
+
+  # GSI: list all feedback for an app, newest first
+  global_secondary_index {
+    name            = "app-time-index"
+    hash_key        = "app_id"
+    range_key       = "created_at"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-ai-feedback"
   }
 }

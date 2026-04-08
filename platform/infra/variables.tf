@@ -87,3 +87,20 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
+
+# -----------------------------------------------------
+# AI Analysis
+# -----------------------------------------------------
+
+variable "anthropic_api_key" {
+  description = "Anthropic API key for AI triage Lambda"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "ai_analysis_enabled" {
+  description = "Set to 'true' to enable AI triage after SAST scans"
+  type        = string
+  default     = "false"
+}

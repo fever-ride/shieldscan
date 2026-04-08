@@ -25,3 +25,7 @@ output "ecs_execution_role_arn" {
 output "ecs_task_role_arn" {
   value = var.use_lab_role ? data.aws_iam_role.lab_role[0].arn : aws_iam_role.ecs_task[0].arn
 }
+
+output "lambda_ai_role_arn" {
+  value = var.use_lab_role ? data.aws_iam_role.lab_role[0].arn : aws_iam_role.lambda_ai[0].arn
+}

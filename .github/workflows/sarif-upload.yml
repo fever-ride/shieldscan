@@ -1,0 +1,47 @@
+name: Upload SARIF to GitHub Code Scanning
+
+# Manual trigger: supply a scan_id to download the SARIF from S3 and upload it.
+# Useful when the Lambda SARIF upload fails (e.g. token scope not set) or for
+# re-uploading historical scans.
+on:
+  workflow_dispatch:
+    inputs:
+      scan_id:
+        description: 'ShieldScan scan_id (e.g. uuid from DynamoDB)'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref the scan was run against (branch or SHA). Defaults to main.'
+        required: false
+        default: main
+        type: string
+
+jobs:
+  upload-sarif:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # required for uploading SARIF
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download SARIF from S3
+        env:
+          REPORTS_BUCKET: ${{ secrets.REPORTS_BUCKET_NAME }}
+        run: |
+          aws s3 cp "s3://${REPORTS_BUCKET}/sarif/${{ inputs.scan_id }}.sarif" results.sarif
+          echo "SARIF size: $(wc -c < results.sarif) bytes"
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          ref: ${{ inputs.ref }}
+          # category disambiguates multiple SARIF uploads for the same ref
+          category: shieldscan-sast-${{ inputs.scan_id }}

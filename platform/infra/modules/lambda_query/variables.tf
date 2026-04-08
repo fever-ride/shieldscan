@@ -14,7 +14,11 @@ variable "scans_table_name" {
   type = string
 }
 
-variable "scan_targets_table_name" {
+variable "apps_table_name" {
+  type = string
+}
+
+variable "ai_feedback_table_name" {
   type = string
 }
 

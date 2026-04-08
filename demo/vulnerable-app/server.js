@@ -84,7 +84,7 @@ app.post('/api/auth', (req, res) => {
 app.get('/api/data', (req, res) => {
   res.json({
     data: 'Some sensitive data',
-    apiKey: 'sk_live_12345abcdef',
+    apiKey: 'DEMOHARDCODEDAPIKEY12345',
     dbConnection: 'mongodb://admin:password@192.168.1.100:27017/db'
   });
 });

@@ -141,21 +141,61 @@ resource "aws_apigatewayv2_route" "query_report" {
 }
 
 # -----------------------------------------------------
-# Route: GET /targets + POST /targets (Cognito auth)
+# Route: GET /apps + POST /apps (Cognito auth)
 # -----------------------------------------------------
 
-resource "aws_apigatewayv2_route" "get_targets" {
+resource "aws_apigatewayv2_route" "get_apps" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "GET /targets"
+  route_key = "GET /apps"
   target    = "integrations/${aws_apigatewayv2_integration.query.id}"
 
   authorization_type = "JWT"
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
-resource "aws_apigatewayv2_route" "post_targets" {
+resource "aws_apigatewayv2_route" "post_apps" {
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = "POST /targets"
+  route_key = "POST /apps"
+  target    = "integrations/${aws_apigatewayv2_integration.query.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
+# -----------------------------------------------------
+# Route: GET /triage/{id} + POST /ai-feedback (Cognito auth)
+# -----------------------------------------------------
+
+resource "aws_apigatewayv2_route" "get_agent" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /agent/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.query.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
+resource "aws_apigatewayv2_route" "get_triage" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /triage/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.query.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
+resource "aws_apigatewayv2_route" "get_ai_feedback" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "GET /ai-feedback/{id}"
+  target    = "integrations/${aws_apigatewayv2_integration.query.id}"
+
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
+resource "aws_apigatewayv2_route" "post_ai_feedback" {
+  api_id    = aws_apigatewayv2_api.main.id
+  route_key = "POST /ai-feedback"
   target    = "integrations/${aws_apigatewayv2_integration.query.id}"
 
   authorization_type = "JWT"

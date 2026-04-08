@@ -20,6 +20,15 @@ resource "aws_sns_topic_subscription" "email" {
 }
 
 # -----------------------------------------------------
+# SNS Topic — SAST scan completion (triggers AI triage)
+# -----------------------------------------------------
+
+resource "aws_sns_topic" "sast_complete" {
+  name = "${var.project_name}-${var.environment}-sast-complete"
+  tags = { Name = "${var.project_name}-${var.environment}-sast-complete" }
+}
+
+# -----------------------------------------------------
 # Lambda Subscription (alert function processes and forwards)
 # -----------------------------------------------------
 

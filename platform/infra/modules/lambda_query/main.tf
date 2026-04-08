@@ -17,9 +17,10 @@ resource "aws_lambda_function" "query" {
 
   environment {
     variables = {
-      SCANS_TABLE_NAME        = var.scans_table_name
-      SCAN_TARGETS_TABLE_NAME = var.scan_targets_table_name
-      REPORTS_BUCKET_NAME     = var.reports_bucket_name
+      SCANS_TABLE_NAME       = var.scans_table_name
+      APPS_TABLE_NAME        = var.apps_table_name
+      AI_FEEDBACK_TABLE_NAME = var.ai_feedback_table_name
+      REPORTS_BUCKET_NAME    = var.reports_bucket_name
     }
   }
 

@@ -1,0 +1,401 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CLOUDWATCH",
+      "label": "CloudWatch",
+      "description": "AWS CloudWatch datasource",
+      "type": "datasource",
+      "pluginId": "cloudwatch",
+      "pluginName": "CloudWatch"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "cloudwatch", "name": "CloudWatch", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" },
+    { "type": "panel", "id": "barchart", "name": "Bar chart", "version": "" }
+  ],
+  "title": "ShieldScan Observability",
+  "description": "SAST + DAST + AI triage metrics for ShieldScan platform",
+  "uid": "shieldscan-v1",
+  "version": 1,
+  "schemaVersion": 36,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "tags": ["shieldscan", "security"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Scans (7d)",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "scans_total",
+          "dimensions": { "status": "completed" },
+          "statistic": "Sum",
+          "period": "604800",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "HIGH Findings (7d)",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "options": {
+        "reduceOptions": { "calcs": ["sum"] },
+        "colorMode": "background",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 5 },
+            { "color": "red", "value": 20 }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "high_findings_total",
+          "dimensions": {},
+          "statistic": "Sum",
+          "period": "604800",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "AI Acceptance Rate (7d)",
+      "description": "Confirmed / (Confirmed + Dismissed) — measures AI triage quality",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "unit": "percentunit"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "human_feedback_total",
+          "dimensions": { "action": "confirm" },
+          "statistic": "Sum",
+          "period": "604800",
+          "refId": "A",
+          "expression": "",
+          "id": "confirmed"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "human_feedback_total",
+          "dimensions": { "action": "dismiss" },
+          "statistic": "Sum",
+          "period": "604800",
+          "refId": "B",
+          "expression": "",
+          "id": "dismissed",
+          "hide": true
+        },
+        {
+          "datasource": { "type": "__expr__" },
+          "type": "math",
+          "expression": "($confirmed + $dismissed) > 0 ? $confirmed / ($confirmed + $dismissed) : 0",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Agent Investigations (7d)",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "agent_investigations_total",
+          "dimensions": {},
+          "statistic": "Sum",
+          "period": "604800",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Scans Over Time",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "scans_total",
+          "dimensions": { "scan_type": "sast", "status": "completed" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "A",
+          "alias": "SAST completed"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "scans_total",
+          "dimensions": { "scan_type": "pentest", "status": "completed" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "B",
+          "alias": "Pentest completed"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "scans_total",
+          "dimensions": { "status": "failed" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "C",
+          "alias": "Failed"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Findings by Severity",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "HIGH" },   "properties": [{ "id": "color", "value": { "fixedColor": "red",    "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "MEDIUM" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "LOW" },    "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "findings_total",
+          "dimensions": { "severity": "HIGH" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "A",
+          "alias": "HIGH"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "findings_total",
+          "dimensions": { "severity": "MEDIUM" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "B",
+          "alias": "MEDIUM"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "findings_total",
+          "dimensions": { "severity": "LOW" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "C",
+          "alias": "LOW"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Findings by Language",
+      "description": "findings_total{language=*} — requires language dimension emitted by SAST scanner",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } } },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "findings_total",
+          "dimensions": { "language": "javascript" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "A",
+          "alias": "JavaScript"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "findings_total",
+          "dimensions": { "language": "python" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "B",
+          "alias": "Python"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "findings_total",
+          "dimensions": { "language": "java" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "C",
+          "alias": "Java"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "findings_total",
+          "dimensions": { "language": "go" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "D",
+          "alias": "Go"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "AI Triage & Agent Activity",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "ai_triage_total",
+          "dimensions": { "status": "success" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "A",
+          "alias": "Triage success"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "ai_triage_total",
+          "dimensions": { "status": "error" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "B",
+          "alias": "Triage error"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "agent_investigations_total",
+          "dimensions": { "verdict": "CONFIRMED" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "C",
+          "alias": "Agent: Confirmed"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "agent_investigations_total",
+          "dimensions": { "verdict": "LIKELY_FALSE_POSITIVE" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "D",
+          "alias": "Agent: False Positive"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Human Feedback (Confirm vs Dismiss)",
+      "description": "Tracks human review of AI suggestions over time",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "human_feedback_total",
+          "dimensions": { "action": "confirm" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "A",
+          "alias": "Confirmed"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "human_feedback_total",
+          "dimensions": { "action": "dismiss" },
+          "statistic": "Sum",
+          "period": "3600",
+          "refId": "B",
+          "alias": "Dismissed"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Scan Duration (p95)",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "scan_duration_ms",
+          "dimensions": { "scan_type": "sast" },
+          "statistic": "p95",
+          "period": "3600",
+          "refId": "A",
+          "alias": "SAST p95"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "scan_duration_ms",
+          "dimensions": { "scan_type": "pentest" },
+          "statistic": "p95",
+          "period": "3600",
+          "refId": "B",
+          "alias": "Pentest p95"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Agent Investigation Duration (p95)",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${DS_CLOUDWATCH}" },
+          "namespace": "ShieldScan",
+          "metricName": "agent_duration_ms",
+          "dimensions": {},
+          "statistic": "p95",
+          "period": "3600",
+          "refId": "A",
+          "alias": "Agent p95"
+        }
+      ]
+    }
+  ]
+}

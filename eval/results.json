@@ -1,0 +1,280 @@
+{
+  "scan_id": "eval-2026-04-01",
+  "ran_at": "2026-04-01T10:23:41.182Z",
+  "model": "claude-haiku-4-5-20251001",
+  "metrics": {
+    "total_findings": 25,
+    "ground_truth_distribution": {
+      "true_positive": 15,
+      "false_positive": 10
+    },
+    "ai_label_distribution": {
+      "TRUE_POSITIVE": 14,
+      "FALSE_POSITIVE": 8,
+      "NEEDS_REVIEW": 3
+    },
+    "confusion_matrix": {
+      "TP": 14,
+      "FN": 1,
+      "FP": 2,
+      "TN": 8
+    },
+    "precision": 0.875,
+    "recall": 0.9333,
+    "f1_score": 0.9032,
+    "accuracy": 0.88,
+    "note": "NEEDS_REVIEW treated as predicted positive (conservative) for precision/recall calculation"
+  },
+  "per_finding": [
+    {
+      "finding_id": "SQL_INJECTION:eval/target/vulnerable.js:21",
+      "rule": "SQL_INJECTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 21,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "Direct string concatenation of userId into SELECT — classic SQL injection sink",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.95,
+      "ai_reasoning": "User-controlled userId is concatenated directly into a SQL SELECT statement without parameterization. This is a confirmed SQL injection sink.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "SQL_INJECTION:eval/target/vulnerable.js:26",
+      "rule": "SQL_INJECTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 26,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "Template literal interpolation of name into SQL string — user-controlled input reaches query",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.94,
+      "ai_reasoning": "Template literal interpolation embeds the name parameter directly into the SQL string. Parameterized queries or an ORM are required.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "NOSQL_INJECTION:eval/target/vulnerable.js:33",
+      "rule": "NOSQL_INJECTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 33,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "req.query passed directly to MongoDB find() — allows operator injection e.g. {$gt:''}",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.93,
+      "ai_reasoning": "Passing the entire req.query object to MongoDB find() allows an attacker to inject query operators like {$gt:''} to bypass authentication or exfiltrate data.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "NOSQL_INJECTION:eval/target/vulnerable.js:38",
+      "rule": "NOSQL_INJECTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 38,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "req.body passed directly to findOne() — auth bypass via {$ne:null} is trivial",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.92,
+      "ai_reasoning": "req.body passed to findOne() enables NoSQL operator injection. An attacker can send {username:{$ne:null}, password:{$ne:null}} to bypass authentication.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "XSS:eval/target/vulnerable.js:45",
+      "rule": "XSS", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 45,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "Unsanitized userInput assigned to innerHTML — classic stored/reflected XSS sink",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.95,
+      "ai_reasoning": "The variable userInput is assigned directly to innerHTML without any sanitization. An attacker-supplied script tag would execute in the victim's browser.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "PATH_TRAVERSAL:eval/target/vulnerable.js:52",
+      "rule": "PATH_TRAVERSAL", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 52,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "req.params.filename used directly in fs.readFile — ../../etc/passwd traversal possible",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.93,
+      "ai_reasoning": "req.params.filename flows into fs.readFile without path normalization or allowlist validation. A path like ../../etc/passwd would succeed.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "INSECURE_FUNCTION:eval/target/vulnerable.js:57",
+      "rule": "INSECURE_FUNCTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 57,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "Scanner fired on the comment line containing 'eval()' — not executable code",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.85,
+      "ai_reasoning": "The matched line is a code comment ('// TP-07: eval() with external input'), not an actual eval() call. The real finding is on line 59.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "INSECURE_FUNCTION:eval/target/vulnerable.js:59",
+      "rule": "INSECURE_FUNCTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 59,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "eval(expression) with externally supplied expression — arbitrary code execution",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.97,
+      "ai_reasoning": "eval() is called with an expression parameter that originates from external input. This allows arbitrary JavaScript execution in the process context.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "INSECURE_FUNCTION:eval/target/vulnerable.js:62",
+      "rule": "INSECURE_FUNCTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 62,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "Scanner matched 'child_process.*exec' against a comment line — not executable code",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.82,
+      "ai_reasoning": "The evidence string starts with '//' indicating this is a comment line. The actual cp.exec() call on line 64 uses an aliased require ('cp') which the rule does not catch.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "JWT_MISUSE:eval/target/vulnerable.js:71",
+      "rule": "JWT_MISUSE", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 71,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "jwt.decode() does not verify the signature — attacker can forge any token payload",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.92,
+      "ai_reasoning": "jwt.decode() is used instead of jwt.verify(). This skips cryptographic signature verification, allowing an attacker to forge any payload without knowing the secret.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "JWT_MISUSE:eval/target/vulnerable.js:77",
+      "rule": "JWT_MISUSE", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 77,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "jwt.verify(token, null) disables signature verification — equivalent to jwt.decode()",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.95,
+      "ai_reasoning": "Passing null as the secret to jwt.verify() disables HMAC signature checking entirely. The function accepts any token regardless of signature validity.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "WEAK_CRYPTO:eval/target/vulnerable.js:84",
+      "rule": "WEAK_CRYPTO", "severity": "MEDIUM",
+      "file": "eval/target/vulnerable.js", "line": 84,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "MD5 used to hash passwords — broken for this use case, rainbow tables exist",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.91,
+      "ai_reasoning": "MD5 is used to hash passwords. It is cryptographically broken for this purpose — rainbow tables and GPU cracking make MD5 password hashes trivial to reverse. Use bcrypt, scrypt, or Argon2.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/vulnerable.js:89",
+      "rule": "INSECURE_RANDOM", "severity": "MEDIUM",
+      "file": "eval/target/vulnerable.js", "line": 89,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "Scanner fired on a comment line mentioning 'token' and 'Math.random()' — not code",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.79,
+      "ai_reasoning": "The evidence is a comment line ('// TP-12: Math.random() used as auth session token'). The actual vulnerable code is on line 91.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/vulnerable.js:91",
+      "rule": "INSECURE_RANDOM", "severity": "MEDIUM",
+      "file": "eval/target/vulnerable.js", "line": 91,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "Math.random() used as session token — predictable, not cryptographically secure",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.88,
+      "ai_reasoning": "Math.random() produces a 64-bit float with only ~53 bits of entropy and is not a CSPRNG. Session tokens must use crypto.randomBytes() or crypto.randomUUID() to be unpredictable.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "PROTOTYPE_POLLUTION:eval/target/vulnerable.js:99",
+      "rule": "PROTOTYPE_POLLUTION", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 99,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "Object.assign onto existing object with req.body — __proto__ key injection possible",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.87,
+      "ai_reasoning": "Object.assign merges req.body into an existing object. An attacker can supply {__proto__:{isAdmin:true}} to pollute Object.prototype and escalate privileges application-wide.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "CORS_MISCONFIGURATION:eval/target/vulnerable.js:107",
+      "rule": "CORS_MISCONFIGURATION", "severity": "MEDIUM",
+      "file": "eval/target/vulnerable.js", "line": 107,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "cors({ origin: '*' }) allows any domain to make cross-origin requests with credentials",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.85,
+      "ai_reasoning": "A wildcard CORS origin allows any external domain to make cross-origin requests. If combined with credentials (cookies/auth headers), this enables cross-site request attacks.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "HARDCODED_SECRET:eval/target/vulnerable.js:112",
+      "rule": "HARDCODED_SECRET", "severity": "HIGH",
+      "file": "eval/target/vulnerable.js", "line": 112,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "Hardcoded demo API key in source — still a real secret-management finding because credentials are embedded in code and git history",
+      "ai_label": "TRUE_POSITIVE", "ai_confidence": 0.98,
+      "ai_reasoning": "A hardcoded API key is embedded directly in source code. Even if it is a demo credential, this is the exact secret-management pattern the rule is meant to catch because real deployments often leak keys this way.",
+      "outcome": "TP"
+    },
+    {
+      "finding_id": "SENSITIVE_DATA_LOG:eval/target/vulnerable.js:118",
+      "rule": "SENSITIVE_DATA_LOG", "severity": "MEDIUM",
+      "file": "eval/target/vulnerable.js", "line": 118,
+      "gt_label": "TRUE_POSITIVE",
+      "gt_notes": "user.password logged to console — appears in log aggregation systems (CloudWatch, Splunk)",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.62,
+      "ai_reasoning": "The console.log call includes user.password in a debug function. Without evidence this runs in production environments, this may be intentional development-time debugging rather than a production logging leak.",
+      "outcome": "FN"
+    },
+    {
+      "finding_id": "XSS:eval/target/false_positives.js:24",
+      "rule": "XSS", "severity": "HIGH",
+      "file": "eval/target/false_positives.js", "line": 24,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "innerHTML receives output of escapeHtml() — sanitized before assignment, not exploitable",
+      "ai_label": "NEEDS_REVIEW", "ai_confidence": 0.55,
+      "ai_reasoning": "innerHTML is assigned the output of escapeHtml(). If this function properly encodes HTML special characters the risk is mitigated, but the implementation is not visible in this file.",
+      "outcome": "FP"
+    },
+    {
+      "finding_id": "WEAK_CRYPTO:eval/target/false_positives.js:16",
+      "rule": "WEAK_CRYPTO", "severity": "MEDIUM",
+      "file": "eval/target/false_positives.js", "line": 16,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "SHA-1 used for content-addressed cache key, not for auth/signing — collision attacks do not apply here",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.75,
+      "ai_reasoning": "SHA-1 is used to generate a cache key from file content. SHA-1 collision attacks affect digital signatures and certificates, not content-addressed lookups where collision resistance is irrelevant.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/false_positives.js:27",
+      "rule": "INSECURE_RANDOM", "severity": "MEDIUM",
+      "file": "eval/target/false_positives.js", "line": 27,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "Scanner fired on a comment line that mentions 'key' and 'Math.random()' — not code",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.88,
+      "ai_reasoning": "The evidence line begins with '//' — this is a comment describing the intent, not executable code. The rule matched the word 'key' inside the identifier 'cacheKey' in the comment text.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "INSECURE_RANDOM:eval/target/false_positives.js:31",
+      "rule": "INSECURE_RANDOM", "severity": "MEDIUM",
+      "file": "eval/target/false_positives.js", "line": 31,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "cacheKey matched 'key' substring — this is a transient UI deduplication id, not a cryptographic secret",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.72,
+      "ai_reasoning": "The rule matched 'key' inside the variable name 'cacheKey'. The value is used as a transient UI element id for grid deduplication — unpredictability is not a security requirement here.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "HARDCODED_IP:eval/target/false_positives.js:36",
+      "rule": "HARDCODED_IP", "severity": "MEDIUM",
+      "file": "eval/target/false_positives.js", "line": 36,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "Scanner fired on comment text '127.0.0.1 is localhost' — not a hardcoded production endpoint",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.83,
+      "ai_reasoning": "The matched line is a comment explaining that 127.0.0.1 is the loopback address. The regex fired on an inline comment rather than an actual assignment.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "HARDCODED_IP:eval/target/false_positives.js:39",
+      "rule": "HARDCODED_IP", "severity": "MEDIUM",
+      "file": "eval/target/false_positives.js", "line": 39,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "127.0.0.1 is the loopback address — not a production secret; used only in local dev config",
+      "ai_label": "FALSE_POSITIVE", "ai_confidence": 0.76,
+      "ai_reasoning": "127.0.0.1 is the loopback address (localhost). Hardcoding a local dev DB host is standard practice and does not expose production infrastructure.",
+      "outcome": "TN"
+    },
+    {
+      "finding_id": "HARDCODED_SECRET:eval/target/false_positives.js:46",
+      "rule": "HARDCODED_SECRET", "severity": "HIGH",
+      "file": "eval/target/false_positives.js", "line": 46,
+      "gt_label": "FALSE_POSITIVE",
+      "gt_notes": "Value 'Change_Me_On_First_Login!' is an explicit placeholder — not a real credential",
+      "ai_label": "NEEDS_REVIEW", "ai_confidence": 0.60,
+      "ai_reasoning": "The value 'Change_Me_On_First_Login!' appears to be a documentation placeholder rather than a real credential. However, if the application falls back to this value when no env var is set, it remains a real risk.",
+      "outcome": "FP"
+    }
+  ]
+}

@@ -96,10 +96,19 @@ resource "aws_iam_role_policy" "lambda_sast" {
         Resource = "${var.reports_bucket_arn}/*"
       },
       {
-        Sid      = "SNSPublish"
+        Sid    = "SNSPublish"
+        Effect = "Allow"
+        Action = ["sns:Publish"]
+        Resource = compact([
+          var.sns_topic_arn,
+          var.sast_complete_topic_arn,
+        ])
+      },
+      {
+        Sid      = "DynamoDBReadApps"
         Effect   = "Allow"
-        Action   = ["sns:Publish"]
-        Resource = var.sns_topic_arn
+        Action   = ["dynamodb:Query"]
+        Resource = ["${var.apps_table_arn}/index/*"]
       },
       {
         Sid      = "CloudWatchLogs"
@@ -147,7 +156,7 @@ resource "aws_iam_role_policy" "lambda_pentest" {
         Sid      = "DynamoDBReadTargets"
         Effect   = "Allow"
         Action   = ["dynamodb:Scan", "dynamodb:Query"]
-        Resource = [var.scan_targets_table_arn, "${var.scan_targets_table_arn}/index/*"]
+        Resource = [var.apps_table_arn, "${var.apps_table_arn}/index/*"]
       },
       {
         Sid      = "CloudWatchLogs"
@@ -191,14 +200,20 @@ resource "aws_iam_role_policy" "lambda_query" {
         Action   = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"]
         Resource = [
           var.scans_table_arn, "${var.scans_table_arn}/index/*",
-          var.scan_targets_table_arn, "${var.scan_targets_table_arn}/index/*"
+          var.apps_table_arn, "${var.apps_table_arn}/index/*"
         ]
       },
       {
         Sid      = "DynamoDBWriteTargets"
         Effect   = "Allow"
         Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]
-        Resource = var.scan_targets_table_arn
+        Resource = var.apps_table_arn
+      },
+      {
+        Sid      = "DynamoDBWriteAiFeedback"
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem", "dynamodb:Query"]
+        Resource = compact([var.ai_feedback_table_arn, "${var.ai_feedback_table_arn}/index/*"])
       },
       {
         Sid      = "S3ReadReports"
@@ -327,6 +342,60 @@ resource "aws_iam_role_policy" "ecs_task" {
         Effect   = "Allow"
         Action   = ["sns:Publish"]
         Resource = var.sns_topic_arn
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------
+# Lambda AI Analysis Role
+# -----------------------------------------------------
+
+resource "aws_iam_role" "lambda_ai" {
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-${var.environment}-lambda-ai-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_ai" {
+  count = var.use_lab_role ? 0 : 1
+  name  = "${var.project_name}-${var.environment}-lambda-ai-policy"
+  role  = aws_iam_role.lambda_ai[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "S3ReadWriteReports"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "${var.reports_bucket_arn}/*"
+      },
+      {
+        Sid      = "DynamoDBReadWriteScans"
+        Effect   = "Allow"
+        Action   = ["dynamodb:UpdateItem", "dynamodb:GetItem", "dynamodb:Query"]
+        Resource = [var.scans_table_arn, "${var.scans_table_arn}/index/*"]
+      },
+      {
+        Sid      = "DynamoDBWriteAiFeedback"
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem"]
+        Resource = compact([var.ai_feedback_table_arn])
+      },
+      {
+        Sid      = "CloudWatchLogs"
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "arn:aws:logs:*:*:*"
       }
     ]
   })

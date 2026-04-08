@@ -67,6 +67,11 @@ export const scanCode = (code, filename = 'untitled.js') => {
     return a.line - b.line;
   });
 
+  // Stable unique ID per finding (rule:file:line), safe as feedback key
+  deduped.forEach(v => {
+    v.finding_id = `${v.id}:${v.file}:${v.line}`;
+  });
+
   return deduped;
 };
 
