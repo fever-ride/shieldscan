@@ -27,10 +27,12 @@ The platform is designed for small security teams and individual developers who 
 ### Data flow
 
 ```
+── Flow 1: SAST ──────────────────────────────────────────────────────────────
+
 GitHub Webhook (PR / push)
         │
         ▼
-API Gateway ──► POST /webhook/sast
+API Gateway  POST /webhook/sast
         │
         ▼
 Lambda: Validator
@@ -41,45 +43,65 @@ Lambda: Validator
 Lambda: Scanner
   • Fetches up to 100 source files via GitHub API
   • Runs multi-language SAST rules
-  • Writes JSON report    → S3  sast/{scan_id}.json
-  • Writes SARIF 2.1.0   → S3  sarif/{scan_id}.sarif
-  • Writes scan summary  → DynamoDB (scans table)
-  • Publishes to SNS     → sast-complete topic
+  • Writes JSON report  → S3  sast/{scan_id}.json
+  • Writes SARIF 2.1.0 → S3  sarif/{scan_id}.sarif
+  • Writes scan summary → DynamoDB (scans table)
+  • Posts PR comment (if webhook trigger)
   • (Optional) uploads SARIF → GitHub Code Scanning API
         │
-        ├──────────────────────────────────────────────────────────────────┐
-        ▼                                                                  ▼
-API Gateway ──► POST /scan/pentest                               SNS: sast-complete
-        │                                                                  │
-        ▼                                                                  ▼
-Lambda: Pentest Trigger                                         Lambda: AI Analysis
-  • Validates request                                             (AI_ANALYSIS_ENABLED=true)
-  • Publishes job to SQS (pentest-queue)                                   │
-        │                                              ┌────────────────────┤
-        ▼                                              │                   │
-ECS Fargate: Pentest Worker                            ▼                   ▼
-  • Polls SQS (long-poll, 20s)             Phase 1: Triage            Phase 2: Agent
-  • Resolves endpoints                      (claude-haiku)             (claude-sonnet)
-    OpenAPI spec → manual list              • Batches top-20            • Top-3 HIGH findings
-    → common-path probe                       HIGH/MEDIUM findings      • ReAct loop
-  • Runs 8 security test types             • Assigns label:              max 10 tool calls
-  • Writes JSON report → S3                  TRUE_POSITIVE               3-min timeout
-  • Writes summary → DynamoDB               FALSE_POSITIVE             • GitHub API tools
-  • Publishes FAIL alerts → SNS             NEEDS_REVIEW               • Issues verdict:
-                                          • Writes ai/{scan_id}.json     CONFIRMED
-                                                                         LIKELY_FALSE_POSITIVE
-                                                                         INCONCLUSIVE
-                                                                       • Writes ai/agent/{scan_id}.json
-                                                                       • Emits EMF metrics
+        ▼
+SNS: sast-complete topic
+        │
+        ├──────────────────────────────┐
+        ▼                              ▼
+Lambda: AI Analysis            Lambda: Alert
+  (AI_ANALYSIS_ENABLED=true)     • Forwards HIGH findings
+        │                          to SNS alert topic → email
+        ├── Phase 1: Batch Triage (claude-haiku)
+        │     • Top-20 HIGH/MEDIUM findings
+        │     • Labels: TRUE_POSITIVE / FALSE_POSITIVE / NEEDS_REVIEW
+        │     • Writes ai/{scan_id}.json → S3
+        │
+        └── Phase 2: Deep Agent (claude-sonnet)
+              • Top-3 HIGH findings
+              • ReAct loop, max 10 tool calls, 3-min timeout
+              • Tools: get_file_context, search_code, get_directory_tree
+              • Verdict: CONFIRMED / LIKELY_FALSE_POSITIVE / INCONCLUSIVE
+              • Writes ai/agent/{scan_id}.json → S3
 
-All scans (SAST + DAST + AI) ──► DynamoDB (scans, apps, ai_feedback tables)
+── Flow 2: DAST ──────────────────────────────────────────────────────────────
 
-React Dashboard ──► API Gateway ──► Lambda: Query API
-  • Browse scan history                   • Serves pre-signed S3 URLs
-  • View AI suggestions                   • Reads DynamoDB
-  • Confirm / Dismiss findings            • Writes human feedback
-  • Register apps (repo + target URL)     • Emits EMF: human_feedback_total
-  (Cognito JWT auth)
+API Gateway  POST /scan/pentest          EventBridge
+(dashboard manual trigger)               daily  02:00 UTC
+        │                                weekly 03:00 UTC Mon
+        └──────────────┬─────────────────┘
+                       ▼
+             Lambda: Pentest Trigger
+               • Validates request / reads scheduled targets from DynamoDB
+               • Publishes job to SQS (pentest-queue)
+                       │
+                       ▼
+             ECS Fargate: Pentest Worker  (always-on, long-polls SQS)
+               • Auto-scales 2→20 tasks when queue depth > 5
+               • Resolves endpoints: OpenAPI spec → manual list → probe
+               • Runs 8 security tests against target URL
+               • Writes JSON report → S3  pentest/{scan_id}.json
+               • Writes scan summary → DynamoDB (scans table)
+               • Publishes FAIL alerts → SNS alert topic → email
+
+── Flow 3: Dashboard ─────────────────────────────────────────────────────────
+
+React SPA (S3 + CloudFront, Cognito auth)
+        │
+        ▼
+API Gateway  (JWT authorizer)
+        │
+        ▼
+Lambda: Query API
+  • GET  /scans, /reports, /apps        → DynamoDB reads + pre-signed S3 URLs
+  • POST /apps                          → register app (repo + target URL)
+  • GET  /triage/{id}, /agent/{id}      → pre-signed S3 URLs for AI reports
+  • POST /ai-feedback                   → confirm / dismiss AI suggestion → DynamoDB
 ```
 
 ### Component responsibilities
@@ -88,8 +110,8 @@ React Dashboard ──► API Gateway ──► Lambda: Query API
 |-----------|---------|---------|-----------|
 | Validator Lambda | Node 18 | API Gateway | SQS message |
 | Scanner Lambda | Node 18 | SQS | S3 JSON + SARIF, DynamoDB, SNS |
-| Pentest Trigger Lambda | Node 18 | API Gateway | SQS message |
-| Pentest Worker | Node 18, ECS Fargate | SQS | S3 JSON, DynamoDB, SNS |
+| Pentest Trigger Lambda | Node 18 | API Gateway / EventBridge | SQS message |
+| Pentest Worker | Node 18, ECS Fargate | SQS (long-poll) | S3 JSON, DynamoDB, SNS |
 | AI Analysis Lambda | Node 18 | SNS | S3 triage + agent JSON, DynamoDB |
 | Query API Lambda | Node 18 | API Gateway | JSON responses, pre-signed URLs |
 | Alert Lambda | Node 18 | SNS | Email (via SNS) |
@@ -193,7 +215,7 @@ The scanner serializes every completed scan to SARIF 2.1.0 and writes it to `sar
 
 ## DAST Engine
 
-The pentest worker runs inside an ECS Fargate container. It polls an SQS queue and processes one job at a time. Each job specifies a `target_url`, optional auth configuration, and optional endpoint hints.
+The pentest worker runs inside an ECS Fargate container that long-polls SQS and processes jobs one at a time. The ECS service keeps one task running at all times (`desired_count = 1`) and auto-scales up to 3 tasks when queue depth exceeds 5. Each job specifies a `target_url`, optional auth configuration, and optional endpoint hints.
 
 ### Endpoint resolution
 
@@ -485,7 +507,7 @@ All resources are provisioned via Terraform in `platform/infra/`. The module str
 | `lambda_ai_analysis` | AI analysis function (triage + agent, 300-second timeout) |
 | `lambda_query` | Query API function |
 | `lambda_alert` | Alert function (forwards SNS events to email) |
-| `ecs_fargate` | Task definition, ECS service on private subnets, ECR repository for pentest worker image |
+| `ecs_fargate` | ECS cluster, task definition (0.25 vCPU / 512 MB), ECR repository. ECS service `desired_count = 2`, auto-scales 2→20 based on SQS queue depth |
 | `cloudwatch` | Log groups for each Lambda, CloudWatch alarms (5 alarms), CloudWatch dashboard |
 
 ### DynamoDB indexes
@@ -580,7 +602,7 @@ All resources are provisioned via Terraform in `platform/infra/`. The module str
 │   │       └── styles.css
 │   │
 │   ├── pentest-worker/
-│   │   ├── worker.mjs                     # SQS poll loop, job dispatch, S3/DynamoDB write
+│   │   ├── worker.mjs                     # Long-poll SQS loop, job dispatch, S3/DynamoDB/SNS write
 │   │   ├── tester.js                      # 8 DAST test implementations
 │   │   ├── emf.mjs
 │   │   └── Dockerfile
