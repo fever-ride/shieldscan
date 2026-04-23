@@ -27,9 +27,9 @@ variable "pentest_queue_url" {
 }
 
 variable "pentest_queue_name" {
-  description = "SQS queue name (for CloudWatch alarm dimension)"
-  type        = string
+  type = string
 }
+
 
 variable "scans_table_name" {
   type = string

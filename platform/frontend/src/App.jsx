@@ -605,6 +605,46 @@ export default function App() {
                         </div>
                       )}
 
+                      {r.confidence_rationale && (
+                        <div className="agent-section">
+                          <strong>Confidence Rationale</strong>
+                          <p>{r.confidence_rationale}</p>
+                        </div>
+                      )}
+
+                      {r.supporting_evidence?.length > 0 && (
+                        <div className="agent-section">
+                          <strong>Supporting Evidence</strong>
+                          <ul>
+                            {r.supporting_evidence.map((item, idx) => (
+                              <li key={`support-${idx}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {r.contradicting_evidence?.length > 0 && (
+                        <div className="agent-section">
+                          <strong>Contradicting Evidence</strong>
+                          <ul>
+                            {r.contradicting_evidence.map((item, idx) => (
+                              <li key={`contradict-${idx}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {r.missing_evidence?.length > 0 && (
+                        <div className="agent-section">
+                          <strong>Missing Evidence</strong>
+                          <ul>
+                            {r.missing_evidence.map((item, idx) => (
+                              <li key={`missing-${idx}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
                       {r.investigation_trace?.length > 0 && (
                         <div className="agent-section">
                           <button

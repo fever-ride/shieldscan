@@ -179,10 +179,11 @@ resource "aws_ecs_service" "pentest_worker" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.pentest_worker.arn
   desired_count   = 2
+
   network_configuration {
     subnets          = var.private_subnet_ids
     security_groups  = [aws_security_group.fargate.id]
-    assign_public_ip = false # Private subnet, outbound via NAT
+    assign_public_ip = false
   }
 
   capacity_provider_strategy {
@@ -191,6 +192,93 @@ resource "aws_ecs_service" "pentest_worker" {
   }
 
   tags = { Name = "${var.project_name}-${var.environment}-pentest-worker" }
+}
+
+# -----------------------------------------------------
+# Auto Scaling — scale out when SQS queue is deep,
+# scale in when queue is empty
+# -----------------------------------------------------
+
+resource "aws_appautoscaling_target" "pentest_worker" {
+  max_capacity       = 20
+  min_capacity       = 2
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.pentest_worker.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "pentest_scale_out" {
+  name               = "${var.project_name}-${var.environment}-pentest-scale-out"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.pentest_worker.resource_id
+  scalable_dimension = aws_appautoscaling_target.pentest_worker.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.pentest_worker.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 60
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_lower_bound = 0
+      scaling_adjustment          = 1
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "pentest_queue_depth" {
+  alarm_name          = "${var.project_name}-${var.environment}-pentest-queue-depth"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 5
+  alarm_description   = "Scale out pentest workers when queue depth exceeds 5"
+
+  dimensions = {
+    QueueName = var.pentest_queue_name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.pentest_scale_out.arn]
+}
+
+resource "aws_appautoscaling_policy" "pentest_scale_in" {
+  name               = "${var.project_name}-${var.environment}-pentest-scale-in"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.pentest_worker.resource_id
+  scalable_dimension = aws_appautoscaling_target.pentest_worker.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.pentest_worker.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 120
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_upper_bound = 0
+      scaling_adjustment          = -1
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "pentest_queue_empty" {
+  alarm_name          = "${var.project_name}-${var.environment}-pentest-queue-empty"
+  comparison_operator = "LessThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "Scale in pentest workers when queue is empty"
+
+  dimensions = {
+    QueueName = var.pentest_queue_name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.pentest_scale_in.arn]
 }
 
 # -----------------------------------------------------
@@ -246,57 +334,5 @@ resource "aws_service_discovery_service" "test_target" {
   }
 }
 
-# -----------------------------------------------------
-# Auto Scaling — Pentest Worker (scale on SQS queue depth)
-# -----------------------------------------------------
-
-resource "aws_appautoscaling_target" "pentest_worker" {
-  max_capacity       = 20
-  min_capacity       = 2
-  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.pentest_worker.name}"
-  scalable_dimension = "ecs:service:DesiredCount"
-  service_namespace  = "ecs"
-}
-
-resource "aws_appautoscaling_policy" "pentest_scale_up" {
-  name               = "${var.project_name}-${var.environment}-pentest-scale-up"
-  policy_type        = "StepScaling"
-  resource_id        = aws_appautoscaling_target.pentest_worker.resource_id
-  scalable_dimension = aws_appautoscaling_target.pentest_worker.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.pentest_worker.service_namespace
-
-  step_scaling_policy_configuration {
-    adjustment_type         = "ChangeInCapacity"
-    cooldown                = 60
-    metric_aggregation_type = "Average"
-
-    step_adjustment {
-      scaling_adjustment          = 2
-      metric_interval_lower_bound = 0
-      metric_interval_upper_bound = 20
-    }
-
-    step_adjustment {
-      scaling_adjustment          = 5
-      metric_interval_lower_bound = 20
-    }
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "sqs_depth" {
-  alarm_name          = "${var.project_name}-${var.environment}-pentest-queue-depth"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 1
-  metric_name         = "ApproximateNumberOfMessagesVisible"
-  namespace           = "AWS/SQS"
-  period              = 60
-  statistic           = "Average"
-  threshold           = 5
-  alarm_actions       = [aws_appautoscaling_policy.pentest_scale_up.arn]
-
-  dimensions = {
-    QueueName = var.pentest_queue_name
-  }
-}
 
 data "aws_region" "current" {}

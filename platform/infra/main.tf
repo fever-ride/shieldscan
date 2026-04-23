@@ -70,6 +70,7 @@ module "iam" {
   reports_bucket_arn      = module.s3_reports.bucket_arn
   sns_topic_arn           = module.sns.topic_arn
   sast_complete_topic_arn = module.sns.sast_complete_topic_arn
+
 }
 
 # =============================================================
@@ -139,9 +140,9 @@ module "ecs_fargate" {
   ecs_execution_role_arn = module.iam.ecs_execution_role_arn
   ecs_task_role_arn      = module.iam.ecs_task_role_arn
 
-  pentest_queue_url  = module.sqs.pentest_queue_url
-  pentest_queue_name = "${var.project_name}-${var.environment}-pentest"
-  scans_table_name   = module.dynamodb.scans_table_name
+  pentest_queue_url   = module.sqs.pentest_queue_url
+  pentest_queue_name  = "${var.project_name}-${var.environment}-pentest"
+  scans_table_name    = module.dynamodb.scans_table_name
   reports_bucket_name = module.s3_reports.bucket_name
   sns_topic_arn      = module.sns.topic_arn
   enable_demo_target = var.enable_demo_target

@@ -2,6 +2,18 @@ output "cluster_name" {
   value = aws_ecs_cluster.main.name
 }
 
+output "cluster_arn" {
+  value = aws_ecs_cluster.main.arn
+}
+
+output "pentest_worker_task_definition_arn" {
+  value = aws_ecs_task_definition.pentest_worker.arn
+}
+
+output "fargate_security_group_id" {
+  value = aws_security_group.fargate.id
+}
+
 output "pentest_worker_service_name" {
   value = aws_ecs_service.pentest_worker.name
 }

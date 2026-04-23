@@ -9,12 +9,24 @@
  *   - one schema-retry if verdict not parseable on first end_turn
  */
 import { TOOL_DEFINITIONS, callTool } from './tools.mjs';
+import { getInvestigationPlaybook } from './playbooks.mjs';
 
 const MODEL          = 'claude-sonnet-4-6';
 const MAX_TOOL_CALLS = 10;
 const TIMEOUT_MS     = 3 * 60 * 1000; // 3 minutes
 
 const VALID_VERDICTS = ['CONFIRMED', 'LIKELY_FALSE_POSITIVE', 'INCONCLUSIVE'];
+
+function normalizeVerdict(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase().replaceAll(' ', '_');
+  return VALID_VERDICTS.includes(normalized) ? normalized : null;
+}
+
+function normalizeStringList(value, fallback = []) {
+  if (!Array.isArray(value)) return fallback;
+  return value.filter(item => typeof item === 'string' && item.trim().length > 0);
+}
 
 // ─── Output validation ────────────────────────────────────────────────────────
 
@@ -25,7 +37,7 @@ const VALID_VERDICTS = ['CONFIRMED', 'LIKELY_FALSE_POSITIVE', 'INCONCLUSIVE'];
 function validateAgentOutput(raw) {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'not an object' };
 
-  const verdict = VALID_VERDICTS.includes(raw.verdict) ? raw.verdict : null;
+  const verdict = normalizeVerdict(raw.verdict);
   if (!verdict) return { ok: false, error: `invalid verdict: ${raw.verdict}` };
 
   let confidence = typeof raw.confidence === 'number' ? raw.confidence : parseFloat(raw.confidence);
@@ -39,13 +51,17 @@ function validateAgentOutput(raw) {
       confidence,
       attack_path: typeof raw.attack_path === 'string'  ? raw.attack_path  : '',
       remediation: typeof raw.remediation === 'string'  ? raw.remediation  : '',
+      supporting_evidence:   normalizeStringList(raw.supporting_evidence),
+      contradicting_evidence: normalizeStringList(raw.contradicting_evidence),
+      missing_evidence:      normalizeStringList(raw.missing_evidence),
+      confidence_rationale:  typeof raw.confidence_rationale === 'string' ? raw.confidence_rationale : '',
     },
   };
 }
 
 // ─── Anthropic API ────────────────────────────────────────────────────────────
 
-async function anthropicCall(apiKey, messages, maxTokens = 4096) {
+async function anthropicCall(apiKey, messages, { maxTokens = 4096, toolsEnabled = true } = {}) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -56,7 +72,7 @@ async function anthropicCall(apiKey, messages, maxTokens = 4096) {
     body: JSON.stringify({
       model:      MODEL,
       max_tokens: maxTokens,
-      tools:      TOOL_DEFINITIONS,
+      ...(toolsEnabled ? { tools: TOOL_DEFINITIONS } : {}),
       messages,
     }),
   });
@@ -72,6 +88,7 @@ async function anthropicCall(apiKey, messages, maxTokens = 4096) {
 function buildUserPrompt(finding, dastContext) {
   const repo   = finding.repo_name ?? 'unknown';
   const branch = finding.branch    ?? 'main';
+  const playbook = getInvestigationPlaybook(finding);
 
   const dastSection = dastContext
     ? `\n\n## DAST Results (same app, recent pentest)\n${JSON.stringify(dastContext, null, 2)}`
@@ -92,16 +109,23 @@ as the sole source of truth for whether a vulnerability exists.
 ${JSON.stringify(finding, null, 2)}
 ${dastSection}
 
-Investigate whether this finding is exploitable. Check how the flagged code is called,
-whether user-controlled input reaches it unsanitised, and whether defences exist.
+${playbook.promptSection}
 
-When done, output a verdict JSON — **no other text after it**:
+Investigate whether this finding is exploitable. Follow the playbook above, gather
+evidence with tools, and check how the flagged code is called, whether user-controlled
+input reaches it, and whether effective defences exist.
+
+When done, output a verdict JSON — **no other text after it** and no Markdown code fences:
 {
   "finding_id": "${finding.finding_id}",
   "verdict": "CONFIRMED" | "LIKELY_FALSE_POSITIVE" | "INCONCLUSIVE",
   "confidence": <float 0.0-1.0>,
   "attack_path": "<exploitation path or reason it is not exploitable>",
-  "remediation": "<specific fix>"
+  "remediation": "<specific fix>",
+  "supporting_evidence": ["<key evidence that supports the verdict>"],
+  "contradicting_evidence": ["<evidence that weakens the verdict, if any>"],
+  "missing_evidence": ["<important evidence you could not establish>"],
+  "confidence_rationale": "<brief explanation for the confidence score>"
 }
 
 Budget: at most ${MAX_TOOL_CALLS} tool calls.`;
@@ -109,15 +133,101 @@ Budget: at most ${MAX_TOOL_CALLS} tool calls.`;
 
 // ─── JSON extraction ──────────────────────────────────────────────────────────
 
-function extractRawVerdict(text) {
-  const match = text.match(/\{[\s\S]*?"verdict"[\s\S]*?\}/);
-  if (!match) return null;
-  try { return JSON.parse(match[0]); } catch { return null; }
+function extractBalancedJson(text) {
+  if (typeof text !== 'string' || !text.includes('{')) return null;
+
+  let start = text.indexOf('{');
+  while (start !== -1) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === '\\') {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === '{') depth++;
+      if (ch === '}') depth--;
+
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+
+    start = text.indexOf('{', start + 1);
+  }
+
+  return null;
+}
+
+function extractRawVerdict(blocks) {
+  const textBlocks = Array.isArray(blocks)
+    ? blocks.filter(block => block?.type === 'text').map(block => block.text)
+    : [blocks];
+
+  for (const text of textBlocks) {
+    const jsonText = extractBalancedJson(text);
+    if (!jsonText) continue;
+    try {
+      return JSON.parse(jsonText);
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function buildFinalVerdictPrompt(finding, trace) {
+  const traceSummary = trace.length === 0
+    ? 'No tools were used.'
+    : trace.map(step => {
+      const output = step.output.length > 400 ? step.output.slice(0, 400) + '\n...[truncated]' : step.output;
+      return `Step ${step.step} - ${step.tool}\nInput: ${JSON.stringify(step.input)}\nOutput:\n${output}`;
+    }).join('\n\n');
+
+  return `Produce the final verdict JSON now.
+
+Do not call tools. Do not add analysis prose. Do not use Markdown fences.
+Return exactly one JSON object matching this schema:
+{
+  "finding_id": "${finding.finding_id}",
+  "verdict": "CONFIRMED" | "LIKELY_FALSE_POSITIVE" | "INCONCLUSIVE",
+  "confidence": <float 0.0-1.0>,
+  "attack_path": "<exploitation path or reason it is not exploitable>",
+  "remediation": "<specific fix>",
+  "supporting_evidence": ["<key evidence that supports the verdict>"],
+  "contradicting_evidence": ["<evidence that weakens the verdict, if any>"],
+  "missing_evidence": ["<important evidence you could not establish>"],
+  "confidence_rationale": "<brief explanation for the confidence score>"
+}
+
+Finding:
+${JSON.stringify(finding, null, 2)}
+
+Investigation trace summary:
+${traceSummary}`;
 }
 
 // ─── ReAct loop ───────────────────────────────────────────────────────────────
 
 async function runLoop(finding, apiKey, dastContext) {
+  const playbook = getInvestigationPlaybook(finding);
   const messages = [{ role: 'user', content: buildUserPrompt(finding, dastContext) }];
 
   // investigation trace — tool calls + results
@@ -129,11 +239,8 @@ async function runLoop(finding, apiKey, dastContext) {
     const response = await anthropicCall(apiKey, messages);
     messages.push({ role: 'assistant', content: response.content });
 
-    const textBlock = response.content.find(b => b.type === 'text');
-    if (textBlock) {
-      const candidate = extractRawVerdict(textBlock.text);
-      if (candidate) rawVerdict = candidate;
-    }
+    const candidate = extractRawVerdict(response.content);
+    if (candidate) rawVerdict = candidate;
 
     if (response.stop_reason === 'end_turn') break;
     if (response.stop_reason !== 'tool_use') break;
@@ -162,10 +269,17 @@ async function runLoop(finding, apiKey, dastContext) {
     console.warn(`Agent: no verdict after loop for ${finding.finding_id}, forcing retry`);
     const retryResponse = await anthropicCall(apiKey, [
       ...messages,
-      { role: 'user', content: 'Output your final verdict JSON now. No tool calls. Follow the exact schema.' },
-    ], 512);
-    const retryText = retryResponse.content.find(b => b.type === 'text');
-    if (retryText) rawVerdict = extractRawVerdict(retryText.text);
+      { role: 'user', content: buildFinalVerdictPrompt(finding, trace) },
+    ], { maxTokens: 1024, toolsEnabled: false });
+    rawVerdict = extractRawVerdict(retryResponse.content);
+  }
+
+  if (!rawVerdict) {
+    console.warn(`Agent: retry still missing verdict for ${finding.finding_id}, forcing strict JSON retry`);
+    const strictRetryResponse = await anthropicCall(apiKey, [
+      { role: 'user', content: buildFinalVerdictPrompt(finding, trace) + '\n\nRemember: output JSON only. Start with {' },
+    ], { maxTokens: 1024, toolsEnabled: false });
+    rawVerdict = extractRawVerdict(strictRetryResponse.content);
   }
 
   // Validate and normalise verdict
@@ -177,10 +291,15 @@ async function runLoop(finding, apiKey, dastContext) {
 
   return {
     finding_id:      finding.finding_id,
+    playbook_id:     playbook.id,
     verdict:         verdict?.verdict     ?? 'INCONCLUSIVE',
     confidence:      verdict?.confidence  ?? 0.5,
     attack_path:     verdict?.attack_path ?? '',
     remediation:     verdict?.remediation ?? '',
+    supporting_evidence:    verdict?.supporting_evidence    ?? [],
+    contradicting_evidence: verdict?.contradicting_evidence ?? [],
+    missing_evidence:       verdict?.missing_evidence       ?? [],
+    confidence_rationale:   verdict?.confidence_rationale   ?? '',
     // "investigation trace" — tool call sequence used by the agent
     investigation_trace: trace,
     tool_calls_used: toolCallCount,

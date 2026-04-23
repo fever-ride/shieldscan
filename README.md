@@ -1,6 +1,6 @@
 # ShieldScan
 
-ShieldScan is a cloud-native application security platform that combines static code analysis (SAST), dynamic penetration testing (DAST), and an AI advisory layer. It scans codebases on every GitHub pull request, runs automated security tests against live endpoints, and surfaces findings through a React dashboard with AI-assisted triage.
+ShieldScan is a cloud-native application security platform that combines static code analysis (SAST), dynamic penetration testing (DAST), and an AI advisory layer. It scans codebases on every GitHub pull request, runs automated security tests against live endpoints, and surfaces findings through a React dashboard with AI-assisted triage and investigation.
 
 The platform is designed for small security teams and individual developers who want a single workflow to go from raw findings to actionable, prioritized results. All AI outputs are suggestions that require human confirmation before any finding status changes.
 
@@ -64,8 +64,10 @@ Lambda: AI Analysis            Lambda: Alert
         │
         └── Phase 2: Deep Agent (claude-sonnet)
               • Top-3 HIGH findings
+              • Investigation playbook by vulnerability type
               • ReAct loop, max 10 tool calls, 3-min timeout
               • Tools: get_file_context, search_code, get_directory_tree
+              • Structured evidence: supporting / contradicting / missing
               • Verdict: CONFIRMED / LIKELY_FALSE_POSITIVE / INCONCLUSIVE
               • Writes ai/agent/{scan_id}.json → S3
 
@@ -259,13 +261,13 @@ All tests record `endpoints_tested[]` in their result object. The pentest report
 
 ### Design principle
 
-The AI layer is strictly advisory. It produces labels and verdicts with confidence scores and reasoning, but it cannot change finding severity or dismiss a finding autonomously. Every AI output in the dashboard is labelled "AI Suggestion — requires human review." A human must click Confirm or Dismiss in the dashboard to record a decision.
+The AI layer is strictly advisory. It can label findings and produce investigation verdicts, but it cannot change severity or dismiss a finding on its own. Every AI output in the dashboard is marked as `AI Suggestion (requires human review)`. A reviewer must click Confirm or Dismiss to record a decision.
 
-This matches how production security tools like Snyk and GitHub GHAS work, and it avoids the class of errors that come from trusting automated systems to make irreversible security decisions.
+This keeps the system aligned with real security review workflows. It also avoids irreversible decisions based only on model output.
 
 ### Phase 1: Batch triage
 
-The triage step runs once per scan, shortly after SAST completes. It sends the top 20 findings (sorted by severity) to Claude Haiku in a single API call and receives a structured JSON response.
+The triage step runs once per scan, shortly after SAST completes. It sends the top 20 findings by severity to Claude Haiku in one API call and expects a structured JSON response.
 
 Each finding in the triage output has:
 
@@ -285,32 +287,51 @@ Output is written to `ai/{scan_id}.json` in S3 and summary counts are written ba
 
 After triage, the agent investigates the top 3 HIGH findings using a ReAct loop. It uses `claude-sonnet-4-6` and has access to three GitHub API tools.
 
+Each run is scoped to one finding. The agent receives the finding itself, the scanned repository and branch, and optional `dast_context` from the most recent pentest on the same app. It also receives an investigation playbook chosen by rule ID, such as SQL injection, XSS, path traversal, or hardcoded secret. The playbook gives the agent a focused checklist for evidence gathering.
+
 **Agent tools**
 
 | Tool | Description |
 |------|-------------|
 | `get_file_context` | Fetches a range of lines from a file at a specific branch or commit SHA. Parameters: `repo`, `path`, `ref`, `start_line`, `end_line` |
-| `search_code` | Searches for a keyword or symbol across the repository using GitHub code search. Returns up to 5 matching files with paths. Note: operates on the default branch only |
-| `get_directory_tree` | Lists files in a directory at a given ref. Useful for understanding project structure and locating middleware or route files |
+| `search_code` | Searches for a keyword or symbol across the repository using GitHub code search. Returns up to 5 matching files with paths. Note: this works on the default branch only |
+| `get_directory_tree` | Lists files in a directory at a given ref. Useful for understanding project structure and locating routes, middleware, and helper files |
+
+`get_file_context` and `get_directory_tree` are revision-pinned through `ref`, so the agent reads the same branch that was scanned. `search_code` is used for discovery only because GitHub code search does not support branch pinning.
 
 **Agent loop**
 
 ```
-Input: finding (finding_id, rule, file, line, code context, DAST context if available)
+Input: finding + repo + branch + playbook + DAST context if available
 
 Loop (max 10 tool calls, 3-minute wall-clock timeout):
-  ├── Model generates reasoning step
-  ├── If tool_use block: execute tool → append result → continue
-  └── If end_turn or no more tool calls: attempt to extract structured verdict
+  1. Read the flagged file and nearby lines
+  2. Look for callers, route handlers, and input sources
+  3. Check for defenses such as validation, escaping, allowlists, or parameterization
+  4. Use DAST evidence as supporting context when it matches the code path
+  5. Stop when enough evidence is collected or the tool budget is reached
 
-Structured output extraction:
-  1. Parse JSON from model response
-  2. Validate verdict against whitelist: CONFIRMED | LIKELY_FALSE_POSITIVE | INCONCLUSIVE
-  3. If validation fails: one schema-retry turn with explicit JSON format instruction
-  4. If still invalid: record validation_error in output
+Final output handling:
+  1. Try to parse a JSON verdict from the model response
+  2. Validate verdict against: CONFIRMED | LIKELY_FALSE_POSITIVE | INCONCLUSIVE
+  3. If no valid JSON is present, run one no-tool retry that asks for JSON only
+  4. If needed, run one stricter JSON-only retry and record validation_error on failure
 
 Output per finding:
-  { finding_id, verdict, confidence, attack_path, remediation, investigation_trace, tool_calls_used }
+  {
+    finding_id,
+    playbook_id,
+    verdict,
+    confidence,
+    attack_path,
+    remediation,
+    supporting_evidence[],
+    contradicting_evidence[],
+    missing_evidence[],
+    confidence_rationale,
+    investigation_trace[],
+    tool_calls_used
+  }
 ```
 
 **SAST × DAST correlation**
@@ -318,6 +339,12 @@ Output per finding:
 If the same `app_id` has a completed pentest scan within the last 7 days, the agent receives a `dast_context` block alongside the SAST finding. This context includes the target URL, failed test IDs, and up to 10 DAST failure details. The agent can then reason across both scan types: for example, a SQL injection finding in `src/user.js` combined with a SQL error response on `/api/user` strengthens the case for a confirmed true positive.
 
 The agent output is written to `ai/agent/{scan_id}.json` in S3. Verdict counts are written back to DynamoDB.
+
+### Separate benchmark repo for agent testing
+
+The offline evaluation under `eval/` is used for triage only. It includes `ground_truth.json`, so it is not used as the target repository for live agent investigation.
+
+For end-to-end agent testing, a separate public repository is used as the scan target: [`fever-ride/shieldscan-agent-bench`](https://github.com/fever-ride/shieldscan-agent-bench). This keeps the code under investigation separate from the answer key and makes agent runs more realistic.
 
 ### Human feedback loop
 
@@ -421,7 +448,7 @@ Opens as an overlay when the Triage button is clicked. Shows the AI summary coun
 
 **Agent investigation panel**
 
-Opens as an overlay when the Agent button is clicked. Shows one card per investigated finding with the verdict badge (CONFIRMED in red, LIKELY_FALSE_POSITIVE in green, INCONCLUSIVE in yellow), confidence, tool call count, attack path narrative, and remediation recommendation. An expandable Investigation Trace section shows the full sequence of tool calls the agent made, including input parameters and truncated output.
+Opens as an overlay when the Agent button is clicked. Shows one card per investigated finding with the verdict badge (CONFIRMED in red, LIKELY_FALSE_POSITIVE in green, INCONCLUSIVE in yellow), confidence, tool call count, attack path narrative, remediation recommendation, confidence rationale, and structured evidence sections for supporting, contradicting, and missing evidence. An expandable Investigation Trace section shows the full sequence of tool calls the agent made, including input parameters and truncated output.
 
 **App registration and manual pentest**
 
@@ -432,6 +459,8 @@ A two-column form where users can register an application by binding a GitHub re
 ## AI Triage Evaluation
 
 To verify that the triage pipeline produces accurate labels, an offline evaluation was built against a 25-finding annotated dataset.
+
+This section measures the batch triage model only. The deep investigation agent is tested separately against the external benchmark repository so it cannot read `ground_truth.json` during investigation.
 
 ### Dataset
 
@@ -587,6 +616,7 @@ All resources are provisioned via Terraform in `platform/infra/`. The module str
 │   │       │       ├── triage.mjs         # Batch triage via claude-haiku
 │   │       │       ├── agent.mjs          # ReAct agent via claude-sonnet
 │   │       │       ├── tools.mjs          # GitHub API tool implementations
+│   │       │       ├── playbooks.mjs      # Investigation playbooks by vulnerability type
 │   │       │       ├── correlate.mjs      # DAST context lookup for cross-scan correlation
 │   │       │       ├── schema.mjs         # Output validation for triage JSON
 │   │       │       └── emf.mjs

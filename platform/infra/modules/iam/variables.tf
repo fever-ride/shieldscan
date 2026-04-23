@@ -48,3 +48,4 @@ variable "ai_feedback_table_arn" {
   type        = string
   default     = ""
 }
+
