@@ -346,6 +346,29 @@ The offline evaluation under `eval/` is used for triage only. It includes `groun
 
 For end-to-end agent testing, a separate public repository is used as the scan target: [`fever-ride/shieldscan-agent-bench`](https://github.com/fever-ride/shieldscan-agent-bench). This keeps the code under investigation separate from the answer key and makes agent runs more realistic.
 
+### Example investigation: SQL injection
+
+One benchmark case shows the role of the deep investigation agent clearly.
+
+- The scanner flags `SQL_INJECTION:src/vulnerable.js:10` in the benchmark repo.
+- The agent reads `src/vulnerable.js` and confirms that `userId` is concatenated into a SQL query.
+- It then reads `src/server.js` and finds that `/users/:id` passes `req.params.id` directly into `getUser()`.
+- It reads `src/db.js` and confirms that the query layer accepts a raw SQL string with no parameterized interface.
+
+This is a source-to-sink investigation:
+
+1. Source: `req.params.id`
+2. Flow: `getUser(req.params.id)`
+3. Sink: `db.query('SELECT * FROM users WHERE id = ' + userId)`
+
+In this run, the agent used 4 tool calls and returned:
+
+- `playbook_id: SQL_INJECTION`
+- `verdict: CONFIRMED`
+- `confidence: 0.98`
+
+The result is not just a label. It also includes structured evidence, missing evidence, confidence rationale, and the full investigation trace.
+
 ### Human feedback loop
 
 ```
