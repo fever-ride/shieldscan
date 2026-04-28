@@ -562,6 +562,48 @@ All resources are provisioned via Terraform in `platform/infra/`. The module str
 | `ecs_fargate` | ECS cluster, task definition (0.25 vCPU / 512 MB), ECR repository. ECS service `desired_count = 2`, auto-scales 2→20 based on SQS queue depth |
 | `cloudwatch` | Log groups for each Lambda, CloudWatch alarms (5 alarms), CloudWatch dashboard |
 
+### VPC design
+
+```
+VPC: 10.0.0.0/16
+│
+├── Public Subnets (NAT Gateway + Internet Gateway)
+│   ├── 10.0.0.0/24  — AZ-a
+│   └── 10.0.1.0/24  — AZ-b
+│
+├── Private Subnets (ECS Fargate workers, no public IP)
+│   ├── 10.0.10.0/24 — AZ-a
+│   └── 10.0.11.0/24 — AZ-b
+│
+├── VPC Endpoints (AWS service traffic stays off the public internet)
+│   ├── S3           — Gateway Endpoint (free)
+│   ├── DynamoDB     — Gateway Endpoint (free)
+│   ├── SQS          — Interface Endpoint (ENI in private subnets)
+│   └── CloudWatch   — Interface Endpoint (ENI in private subnets)
+│
+└── NAT Gateway ×1 (first public subnet, single-AZ for cost savings)
+```
+
+**Traffic paths**
+
+| Source | Destination | Path |
+|--------|-------------|------|
+| ECS Worker → external target URL | Public internet | Private subnet → NAT Gateway → IGW → internet |
+| ECS Worker → S3 / DynamoDB | AWS service | Private subnet → VPC Gateway Endpoint (no NAT, no egress charge) |
+| ECS Worker → SQS / CloudWatch Logs | AWS service | Private subnet → VPC Interface Endpoint (ENI, stays in VPC) |
+| GitHub Webhook → API Gateway | Inbound | Public internet → API Gateway (managed, outside VPC) → Lambda |
+
+**Design decisions**
+
+| Decision | Rationale |
+|----------|-----------|
+| 2 AZs | Minimum for high availability |
+| Public / private subnet split | ECS tasks run in private subnets with no public IP — outbound only, no inbound from internet |
+| Single NAT Gateway | ~$32/month savings vs one-per-AZ; acceptable single point of failure for a non-critical dev workload |
+| Gateway Endpoints for S3 + DynamoDB | Free; avoids NAT data processing charges on high-frequency services |
+| Interface Endpoints for SQS + CloudWatch | Keeps queue messages and logs off the public internet |
+| Endpoint security group: 443 from VPC CIDR only | Restricts endpoint access to traffic originating within the VPC |
+
 ### DynamoDB indexes
 
 **`scans` table**
