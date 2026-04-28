@@ -217,7 +217,7 @@ The scanner serializes every completed scan to SARIF 2.1.0 and writes it to `sar
 
 ## DAST Engine
 
-The pentest worker runs inside an ECS Fargate container that long-polls SQS and processes jobs one at a time. The ECS service keeps one task running at all times (`desired_count = 1`) and auto-scales up to 3 tasks when queue depth exceeds 5. Each job specifies a `target_url`, optional auth configuration, and optional endpoint hints.
+The pentest worker runs inside an ECS Fargate container that long-polls SQS and processes jobs one at a time. The ECS service maintains a warm pool of 2 tasks (`desired_count = 2`) using FARGATE_SPOT for cost optimization, and auto-scales up to 20 tasks when queue depth exceeds 5. Scale-in occurs when the queue is empty for 2 consecutive evaluation periods (120 seconds), but never drops below the 2-task baseline. Each job specifies a `target_url`, optional auth configuration, and optional endpoint hints.
 
 ### Endpoint resolution
 
